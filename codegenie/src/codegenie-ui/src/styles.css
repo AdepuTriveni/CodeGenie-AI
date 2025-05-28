@@ -288,12 +288,7 @@ html {
   font-style: italic;
 }
 
-.theme-switcher-fixed {
-  position: fixed;
-  top: 24px;
-  right: 24px;
-  z-index: 2000;
-}
+
 
 .theme-toggle-btn {
   background: transparent;
@@ -367,3 +362,60 @@ html {
   color: #fff;
   outline: none;
 }
+
+
+
+top-controls {
+  position: sticky;
+  top: 0;
+  z-index: 2000;
+  display: flex;
+  justify-content: space-between; /* Places help on left, switcher on right */
+  align-items: center;
+  background: #fff; /* Set your desired background */
+  padding: 8px 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+.spacer {
+  flex: 1; /* 👈 Pushes the theme switcher to the right */
+}
+
+/* Help button style */
+.help-button {
+  background: #f5f5f5;
+  border: none;
+  border-radius: 50%;
+  padding: 8px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  transition: background 0.15s;
+}
+.help-button:hover {
+  background: #e0e0e0;
+}
+.help-popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 60px;
+}
+
+.help-popup {
+  background: #232323;
+  color: #fff;
+  border-radius: 10px;
+  padding: 32px 28px 24px 28px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  max-width: 420px;
+  width: 90%;
+  text-align: left;
+  position: relative;
+}
+

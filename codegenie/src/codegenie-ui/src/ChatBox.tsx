@@ -2,32 +2,31 @@ import React, { useState, useEffect, useRef } from "react";
 import { fetchAICompletion } from "./api";
 import { darcula } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { IoSendOutline, IoAddCircleOutline } from "react-icons/io5";
-import { HiDesktopComputer } from "react-icons/hi";
-import { BsPciCard } from "react-icons/bs";
+import { IoSendOutline, IoAddCircleOutline } from 'react-icons/io5';
+import { HiDesktopComputer } from 'react-icons/hi';
+import { BsPciCard } from 'react-icons/bs';
 import { BsCopy } from "react-icons/bs";
 import { LuFileCode2 } from "react-icons/lu";
+import { IoMdHelp } from "react-icons/io";
 import ReactMarkdown from 'react-markdown';
 import ThemeSwitcher from "./ThemeSwitcher";
 import "./styles.css";
 
-type Message = {
-  text: string;
-  sender: "user" | "bot";
-};
-
 const ChatBox = () => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<{ text: string; sender: string }[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [pendingFileContents, setPendingFileContents] = useState<string[]>([]);
+  const [showHelpPopup, setShowHelpPopup] = useState(false);
+  const [showFullHelp, setShowFullHelp] = useState(false);
+
 
   function extractCodeBlocksWithLang(text: string) {
     const codeRegex = /```(\w+)?\n([\s\S]*?)```/g;
@@ -41,56 +40,51 @@ const ChatBox = () => {
     }
     return codeBlocks;
   }
-  
+
   function removeCodeBlocks(text: string) {
     return text.replace(/```(?:[\w]*)?\n[\s\S]*?```/g, "").trim();
   }
 
-  const renderMessage = (msg: Message) => {
+  const renderMessage = (msg: { text: string; sender: string }) => {
     if (msg.sender === "bot") {
       const codeBlocks = extractCodeBlocksWithLang(msg.text);
       const displayText = removeCodeBlocks(msg.text);
-  
+
       return (
         <div className="bot-message">
-        {displayText && (
+          {displayText && (
             <div className="markdown" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
               <ReactMarkdown>
                 {displayText}
               </ReactMarkdown>
             </div>
-        )}
+          )}
           {codeBlocks.map(({ lang, code }, idx) => (
             <div className="code-block" key={idx}>
-              <SyntaxHighlighter
-                language={lang}
-                style={darcula}
-                wrapLongLines={true}
-                customStyle={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-              >
+              <SyntaxHighlighter language={lang} style={darcula} wrapLongLines={true}
+                customStyle={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {code}
               </SyntaxHighlighter>
               <div className="code-actions">
-                 <button onClick={() => handleCopy(code, idx)}>
+                <button onClick={() => handleCopy(code, idx)}>
                   {copiedIndex === idx ? "Copied" : <BsCopy size={15} />}
                 </button>
-                <button
-                  onClick={() => {
-                    const vscode = (window as any).acquireVsCodeApi?.();
-                    if (vscode) {
-                      vscode.postMessage({ type: "insertCode", code });
-                    }
-                  }}
-                ><LuFileCode2 size={15} /></button>
+
+                <button onClick={() => {
+                  const vscode = (window as any).acquireVsCodeApi?.();
+                  if (vscode) {
+                    vscode.postMessage({ type: "insertCode", code });
+                  }
+
+                }}><LuFileCode2 size={15} /></button>
               </div>
             </div>
           ))}
         </div>
       );
     }
-  
     return <pre className="user-message">{msg.text}</pre>;
-  };  
+  };
 
   const handleCopy = (code: string, index: number) => {
     navigator.clipboard.writeText(code);
@@ -105,7 +99,6 @@ const ChatBox = () => {
       const scrollHeight = textarea.scrollHeight;
       const maxHeight = 120;
       const minHeight = 40;
-
       if (scrollHeight > minHeight) {
         textarea.style.height = Math.min(scrollHeight, maxHeight) + "px";
         textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
@@ -121,17 +114,60 @@ const ChatBox = () => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 0);
     return () => clearTimeout(timeout);
-    }, [messages, isTyping]);
+  }, [messages, isTyping]);
+
+  useEffect(() => {
+    function handleVsCodeMessage(event: MessageEvent) {
+      const message = event.data;
+      if (message && message.type === "explainCode") {
+        // Show selected code as user message
+        setMessages(prev => [
+          ...prev,
+          { text: `Explain this code:\n\n${message.code}`, sender: "user" }
+        ]);
+        setIsTyping(true);
+
+        // Call your backend /explain endpoint
+        fetch("http://127.0.0.1:8000/explain", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: message.code,
+            max_tokens: 2048
+          })
+        })
+          .then(res => res.json())
+          .then(data => {
+            setMessages(prev => [
+              ...prev,
+              { text: data.response, sender: "bot" }
+            ]);
+          })
+          .catch(() => {
+            setMessages(prev => [
+              ...prev,
+              { text: "❌ Error: Could not explain code.", sender: "bot" }
+            ]);
+          })
+          .finally(() => setIsTyping(false));
+      }
+    }
+
+    window.addEventListener("message", handleVsCodeMessage as EventListener);
+    return () => window.removeEventListener("message", handleVsCodeMessage as EventListener);
+  }, []);
 
   const sendMessage = async () => {
-     if (!input.trim() && pendingFiles.length === 0) return;
+    if (!input.trim() && pendingFiles.length === 0) return;
     if (pendingFiles.length > 0 && pendingFileContents.length < pendingFiles.length) return;
 
+    // What to show in chat history:
     let userDisplay = input.trim();
     if (pendingFiles.length > 0) {
       userDisplay += (userDisplay ? "\n" : "") + "Attachments: " + pendingFiles.map(f => f.name).join(", ");
     }
 
+    // What to send to backend:
     let promptToSend = input.trim();
     if (pendingFiles.length > 0) {
       pendingFiles.forEach((file, idx) => {
@@ -143,27 +179,32 @@ const ChatBox = () => {
       ...prev,
       { text: userDisplay, sender: "user" }
     ]);
-
     setInput("");
     setPendingFiles([]);
     setPendingFileContents([]);
     setIsTyping(true);
-  
+
     try {
       const API_URL = pendingFiles.length > 0
         ? "http://127.0.0.1:8000/generate-large"
         : "http://127.0.0.1:8000/generate";
-
       const maxTokens = pendingFiles.length > 0 ? 4096 : 1000;
       const aiResponse = await fetchAICompletion(promptToSend, API_URL, maxTokens);
 
-      setMessages((prev) => [...prev, { text: aiResponse, sender: "bot" }]);
-    } catch (error: any) {
-      setMessages((prev) => [...prev, { text: error.message, sender: "bot" }]);
-    } finally {
-      setIsTyping(false);
+      setMessages(prev => [...prev, { text: aiResponse, sender: "bot" }]);
+    } catch (error) {
+      console.error("API Error:", error);
+      setMessages(prev => [
+        ...prev,
+        {
+          text: "❌ Error: Failed to get response from AI backend. Please check your connection.",
+          sender: "bot"
+        }
+      ]);
     }
+    setIsTyping(false);
   };
+
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -172,6 +213,7 @@ const ChatBox = () => {
 
     setPendingFiles(prev => [...prev, ...filesArray]);
 
+    // Read all files as text
     filesArray.forEach((file) => {
       const reader = new FileReader();
       reader.onload = () => {
@@ -179,13 +221,25 @@ const ChatBox = () => {
       };
       reader.readAsText(file);
     });
-  };  
+  };
+
 
   return (
-    <div>
-      <div className="theme-switcher-fixed">
-        <ThemeSwitcher />
-      </div>
+    <div className="top-controls">
+  <button
+    className="help-button"
+    onClick={() => setShowHelpPopup(!showHelpPopup)}
+    aria-label={showHelpPopup ? "Hide help" : "Show help"}
+    title={showHelpPopup ? "Hide CodeGenie Help" : "Show CodeGenie Help"}
+  >
+    <IoMdHelp size={14} />
+  </button>
+
+  <div className="spacer" >
+    <ThemeSwitcher />
+  </div>
+
+
 
       <div className="chatbox-container">
         <div className="chatbox-history" ref={chatRef}>
@@ -255,14 +309,54 @@ const ChatBox = () => {
                 isTyping ||
                 (pendingFiles.length > 0 && pendingFileContents.length < pendingFiles.length)
               }
-             >
-              <IoSendOutline size={20} />
+            >
+              <IoSendOutline size={25} />
             </button>
           </div>
-          </div>
-      </div>
+        </div>
+     
+
+        
+
+
+       {showHelpPopup && (
+  <div className="help-popup-overlay" onClick={() => setShowHelpPopup(false)}>
+    <div className="help-popup" onClick={(e) => e.stopPropagation()}>
+      <h2>CodeGenie Quick Help</h2>
+      <ul>
+        <li>💬 <b>Chat with AI</b> about code and tasks</li>
+        <li>📎 <b>Attach multiple files</b> for context-aware analysis</li>
+        <li>🖱️ <b>Right-click code</b> for Explain, Debug, or Improve</li>
+        <li>💡 <b>Generate code</b> or comments from prompts</li>
+        <li>🐞 <b>Debug code</b> for instant error analysis</li>
+        <li>🌓 <b>Switch themes</b> with the moon/sun icon</li>
+        <li>⚡ <b>Inline completions</b> for code suggestions</li>
+      </ul>
+      <button
+        className="more-button"
+        onClick={() => { setShowFullHelp(true); setShowHelpPopup(false); }}
+      >
+        More
+      </button>
+      <button
+        className="close-button"
+        onClick={() => setShowHelpPopup(false)}
+      >
+        Close
+      </button>
     </div>
+  </div>
+)}
+
+
+
+
+      </div>
+
+    </div>
+
   );
+
 };
 
 export default ChatBox;
